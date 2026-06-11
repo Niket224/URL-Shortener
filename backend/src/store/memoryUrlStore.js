@@ -1,4 +1,5 @@
 const crypto = require("crypto");
+const { isValidCode, CODE_CONSTRAINT_MESSAGE } = require("../utils/code");
 
 /** In-memory store when MongoDB is not configured (local dev / quick try). */
 
@@ -22,7 +23,17 @@ function toLean(doc) {
   };
 }
 
-async function createUrl({ originalUrl, shortCode }) {
+function createUrl({ originalUrl, shortCode }) {
+  // Defense in depth: mirror the canonical code constraint so the in-memory
+  // store can never create an unroutable link, even if called directly. The
+  // error is shaped like a Mongoose ValidationError so the API maps it to a
+  // consistent 400 (matching Mongo-mode behavior). Thrown synchronously so
+  // callers see the same failure regardless of store backend.
+  if (!isValidCode(shortCode)) {
+    const err = new Error(CODE_CONSTRAINT_MESSAGE);
+    err.name = "ValidationError";
+    throw err;
+  }
   if (idByCode.has(shortCode)) {
     const err = new Error("Duplicate shortCode");
     err.code = 11000;

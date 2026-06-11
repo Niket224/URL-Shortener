@@ -2,6 +2,7 @@ const express = require("express");
 const router = express.Router();
 const { nanoid } = require("nanoid");
 const { getStore } = require("../store");
+const { isValidCode, CODE_CONSTRAINT_MESSAGE } = require("../utils/code");
 
 function baseUrl() {
   return process.env.BASE_URL || `http://localhost:${process.env.PORT || 5001}`;
@@ -27,9 +28,9 @@ router.post("/", async (req, res) => {
     const shortCode = trimmedCustom || nanoid(6);
 
     if (trimmedCustom) {
-      if (!/^[a-zA-Z0-9_-]+$/.test(trimmedCustom)) {
+      if (!isValidCode(trimmedCustom)) {
         return res.status(400).json({
-          error: "Custom code can only contain letters, numbers, hyphens, and underscores",
+          error: CODE_CONSTRAINT_MESSAGE,
         });
       }
       const existing = await store.findByShortCode(shortCode);
@@ -51,6 +52,9 @@ router.post("/", async (req, res) => {
   } catch (err) {
     if (err.code === 11000) {
       return res.status(409).json({ error: "Short code conflict, please try again" });
+    }
+    if (err.name === "ValidationError") {
+      return res.status(400).json({ error: CODE_CONSTRAINT_MESSAGE });
     }
     console.error("POST /api/urls", err);
     res.status(500).json({ error: "Server error" });

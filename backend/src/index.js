@@ -17,12 +17,16 @@ app.use(
 );
 app.use(express.json());
 
-const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 100,
-  message: { error: "Too many requests, please try again later." },
-});
-app.use("/api/", limiter);
+// Rate limiting is skipped in the test environment so property-based tests
+// (which issue many requests) are not throttled.
+if (process.env.NODE_ENV !== "test") {
+  const limiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max: 100,
+    message: { error: "Too many requests, please try again later." },
+  });
+  app.use("/api/", limiter);
+}
 
 app.get("/api/health", (req, res) => {
   res.json({
@@ -38,13 +42,23 @@ app.use("/", redirectRoute);
 // Default 5001: macOS AirPlay uses port 5000 and returns 403 to API requests.
 const PORT = process.env.PORT || 5001;
 
-initStore()
-  .then(() => {
-    app.listen(PORT, () => {
-      console.log(`🚀 Server running on port ${PORT} (${getStoreMode()})`);
+function start() {
+  return initStore()
+    .then(() => {
+      app.listen(PORT, () => {
+        console.log(`🚀 Server running on port ${PORT} (${getStoreMode()})`);
+      });
+    })
+    .catch((err) => {
+      console.error("❌ Failed to start:", err.message);
+      process.exit(1);
     });
-  })
-  .catch((err) => {
-    console.error("❌ Failed to start:", err.message);
-    process.exit(1);
-  });
+}
+
+// Only start the server when this file is run directly (e.g. `node src/index.js`).
+// When required from tests, the test harness drives `app` and `initStore` itself.
+if (require.main === module) {
+  start();
+}
+
+module.exports = { app, start };

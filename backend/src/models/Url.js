@@ -1,4 +1,5 @@
 const mongoose = require("mongoose");
+const { CODE_PATTERN, CODE_CONSTRAINT_MESSAGE } = require("../utils/code");
 
 const clickSchema = new mongoose.Schema({
   timestamp: { type: Date, default: Date.now },
@@ -20,6 +21,9 @@ const urlSchema = new mongoose.Schema(
       trim: true,
       minlength: 4,
       maxlength: 12,
+      // Charset + length mirror the canonical constraint (single source of
+      // truth in utils/code.js). No widening of the 4–12 range.
+      match: [CODE_PATTERN, CODE_CONSTRAINT_MESSAGE],
     },
     clicks: {
       type: Number,
