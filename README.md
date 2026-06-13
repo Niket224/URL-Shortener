@@ -4,19 +4,24 @@
 
 A full-stack URL shortener with click analytics, custom short codes, and a sleek dark-mode UI.
 
-**Live Demo:** [snip.vercel.app](https://snip.vercel.app) <!-- update after deploy -->  
-**Tech Stack:** React · Vite · Node.js · Express · MongoDB · Vercel
+**Live Demo:** [urlshortener-sigma-pearl.vercel.app](https://urlshortener-sigma-pearl.vercel.app)  
+**Backend API:** [url-shortener-1-xxuc.onrender.com](https://url-shortener-1-xxuc.onrender.com)  
+**Tech Stack:** React · Vite · Node.js · Express · MongoDB · Vercel · Render
+
+![Snip URL Shortener Screenshot](./Screenshot%20(2).png)
 
 ---
 
 ## Features
 
-- 🔗 Shorten any URL instantly
-- ✏️ Custom short codes (e.g. `/my-link`)
-- 📊 Per-link click analytics with 7-day bar chart
-- 🗑️ Delete links
-- ⚡ Rate limiting (100 req / 15 min)
-- 🌐 301 redirect with click tracking (referrer + user-agent)
+- 🔗 **Instant URL Shortening** — Paste any long URL and get a clean short link
+- ✏️ **Custom Short Codes** — Create branded links (e.g. `/promo`, `/sale2024`)
+- 📊 **Click Analytics** — Track clicks with 7-day bar chart visualization
+- 🗑️ **Link Management** — View, copy, and delete your links
+- ⚡ **Rate Limiting** — 100 requests per 15 minutes to prevent abuse
+- 🌐 **301 Redirects** — SEO-friendly permanent redirects with click tracking
+- 🔒 **Durable Storage** — Links persist across server restarts (MongoDB)
+- ✅ **Production-Ready** — Bugfix ensures no 404s from non-durable storage or routing mismatches
 
 ---
 
@@ -90,33 +95,55 @@ Open [http://localhost:5173](http://localhost:5173)
 
 ---
 
-## Deploy to Vercel
+## Deployment
 
-### Step 1 — Push to GitHub
+This project is deployed using a split architecture:
+- **Frontend:** Vercel (React + Vite)
+- **Backend:** Render (Node.js + Express)
+- **Database:** MongoDB Atlas
 
-```bash
-git init
-git add .
-git commit -m "feat: full stack url shortener"
-git remote add origin https://github.com/YOUR_USERNAME/url-shortener.git
-git push -u origin main
-```
+### Deploy Backend to Render
 
-### Step 2 — Deploy on Vercel
-
-1. Go to [vercel.com](https://vercel.com) → **Add New Project**
-2. Import your GitHub repo
-3. Add these **Environment Variables** in Vercel dashboard:
+1. Go to [render.com](https://render.com) → **New Web Service**
+2. Connect your GitHub repo
+3. Configure:
+   - **Root Directory:** `backend`
+   - **Build Command:** `npm install`
+   - **Start Command:** `npm start`
+4. Add **Environment Variables**:
 
 | Key | Value |
 |-----|-------|
-| `MONGODB_URI` | your MongoDB Atlas URI |
-| `BASE_URL` | `https://your-project.vercel.app` |
-| `FRONTEND_URL` | `https://your-project.vercel.app` |
-| `VITE_API_URL` | `https://your-project.vercel.app` |
-| `VITE_BASE_URL` | `https://your-project.vercel.app` |
+| `MONGODB_URI` | `mongodb+srv://user:pass@cluster0.xxxxx.mongodb.net/urlshortener` |
+| `PORT` | `5001` |
+| `NODE_ENV` | `production` |
+| `BASE_URL` | `https://your-backend.onrender.com` |
+| `FRONTEND_URL` | `https://your-frontend.vercel.app` |
 
-4. Click **Deploy** ✓
+5. Deploy and note your backend URL (e.g., `https://url-shortener-1-xxuc.onrender.com`)
+
+### Deploy Frontend to Vercel
+
+1. Go to [vercel.com](https://vercel.com) → **Add New Project**
+2. Import your GitHub repo
+3. Configure:
+   - **Root Directory:** `frontend`
+   - **Framework Preset:** Vite
+4. Add **Environment Variables**:
+
+| Key | Value |
+|-----|-------|
+| `VITE_API_URL` | `https://your-backend.onrender.com` (no trailing slash) |
+| `VITE_BASE_URL` | `https://your-backend.onrender.com` (no trailing slash) |
+
+5. Click **Deploy** ✓
+
+### MongoDB Atlas Setup
+
+1. Create a free cluster at [mongodb.com/atlas](https://mongodb.com/atlas)
+2. **Database Access** → Create a database user (username + password)
+3. **Network Access** → Add IP Address → **Allow Access from Anywhere** (`0.0.0.0/0`)
+4. Get your connection string and add it to both Render and Vercel environment variables
 
 ---
 
@@ -134,6 +161,12 @@ git push -u origin main
 
 ## Resume Blurb
 
-> **Snip — URL Shortener** · [GitHub](#) · [Live Demo](#)  
-> Full-stack link shortening app with REST API, click analytics, and custom short codes. Built with React, Node.js/Express, MongoDB, and deployed on Vercel with GitHub CI/CD. Features rate limiting, 301 redirects, and a 7-day analytics dashboard.  
-> `React` `Vite` `Node.js` `Express` `MongoDB` `REST API` `Vercel`
+> **Snip — URL Shortener** · [GitHub](https://github.com/Niket224/URL-Shortener) · [Live Demo](https://urlshortener-sigma-pearl.vercel.app)  
+> Full-stack link shortening app with REST API, click analytics, and custom short codes. Deployed on Vercel (frontend) and Render (backend) with MongoDB Atlas. Features rate limiting, 301 redirects, durable storage, and a 7-day analytics dashboard. Implemented comprehensive bugfix using property-based testing to resolve 404 errors from non-durable storage and routing mismatches.  
+> `React` `Vite` `Node.js` `Express` `MongoDB` `REST API` `Vercel` `Render` `Jest` `Property-Based Testing`
+
+---
+
+## License
+
+MIT © Niket Kumar
