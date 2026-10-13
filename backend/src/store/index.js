@@ -23,7 +23,10 @@ function requiresDurableStore() {
 
 async function initStore() {
   if (process.env.MONGODB_URI) {
-    await mongoose.connect(process.env.MONGODB_URI);
+    await mongoose.connect(process.env.MONGODB_URI, { serverSelectionTimeoutMS: 5000 });
+    await require("../models/Url").init();
+    const { User, Session } = require("../auth");
+    await Promise.all([User.init(), Session.init()]);
     mode = "mongo";
     store = require("./mongoUrlStore");
     console.log("✅ Connected to MongoDB");
@@ -46,4 +49,8 @@ async function initStore() {
   );
 }
 
-module.exports = { initStore, getStore, getStoreMode };
+function isStoreReady() {
+  return Boolean(store) && (mode === "memory" || mongoose.connection.readyState === 1);
+}
+
+module.exports = { initStore, getStore, getStoreMode, isStoreReady };

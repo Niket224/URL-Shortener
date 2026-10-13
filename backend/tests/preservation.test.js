@@ -17,6 +17,7 @@
 
 // In-memory store, no rate limiter. Must be set before requiring the app/store.
 process.env.NODE_ENV = "test";
+process.env.AUTH_MODE = "public";
 delete process.env.MONGODB_URI;
 
 const request = require("supertest");
@@ -36,7 +37,7 @@ beforeAll(async () => {
 });
 
 describe("Property 3 (Preservation): valid code creation and redirect", () => {
-  test("3.1 auto-generated code (nanoid, 6 chars) is created (201) and redirects with 301", async () => {
+  test("3.1 auto-generated code (nanoid, 6 chars) is created (201) and redirects with 302", async () => {
     const originalUrl = "https://example.com/auto";
     const create = await request(app).post("/api/urls").send({ originalUrl });
 
@@ -45,11 +46,11 @@ describe("Property 3 (Preservation): valid code creation and redirect", () => {
     expect(create.body.shortCode).toHaveLength(6); // nanoid(6)
 
     const visit = await request(app).get(`/${create.body.shortCode}`);
-    expect(visit.status).toBe(301);
+    expect(visit.status).toBe(302);
     expect(visit.headers.location).toBe(originalUrl);
   });
 
-  test("3.2 in-range custom code 'promo' (5 chars) is accepted (201) and redirects (301)", async () => {
+  test("3.2 in-range custom code 'promo' (5 chars) is accepted (201) and redirects (302)", async () => {
     const originalUrl = "https://example.com/promo-target";
     const create = await request(app)
       .post("/api/urls")
@@ -59,11 +60,11 @@ describe("Property 3 (Preservation): valid code creation and redirect", () => {
     expect(create.body.shortCode).toBe("promo");
 
     const visit = await request(app).get("/promo");
-    expect(visit.status).toBe(301);
+    expect(visit.status).toBe(302);
     expect(visit.headers.location).toBe(originalUrl);
   });
 
-  test("3.2 boundary length 4 ('abcd') is accepted (201) and redirects (301)", async () => {
+  test("3.2 boundary length 4 ('abcd') is accepted (201) and redirects (302)", async () => {
     const originalUrl = "https://example.com/len4";
     const create = await request(app)
       .post("/api/urls")
@@ -73,11 +74,11 @@ describe("Property 3 (Preservation): valid code creation and redirect", () => {
     expect(create.body.shortCode).toBe("abcd");
 
     const visit = await request(app).get("/abcd");
-    expect(visit.status).toBe(301);
+    expect(visit.status).toBe(302);
     expect(visit.headers.location).toBe(originalUrl);
   });
 
-  test("3.2 boundary length 12 ('abcdefghijkl') is accepted (201) and redirects (301)", async () => {
+  test("3.2 boundary length 12 ('abcdefghijkl') is accepted (201) and redirects (302)", async () => {
     const originalUrl = "https://example.com/len12";
     const create = await request(app)
       .post("/api/urls")
@@ -87,7 +88,7 @@ describe("Property 3 (Preservation): valid code creation and redirect", () => {
     expect(create.body.shortCode).toBe("abcdefghijkl");
 
     const visit = await request(app).get("/abcdefghijkl");
-    expect(visit.status).toBe(301);
+    expect(visit.status).toBe(302);
     expect(visit.headers.location).toBe(originalUrl);
   });
 });
@@ -175,7 +176,7 @@ describe("Property 3 (Preservation): PBT — in-range codes create and resolve",
   const charArb = fc.constantFrom(...VALID_CHARS);
   const inRangeCode = fc.stringOf(charArb, { minLength: 4, maxLength: 12 });
 
-  test("PBT: any code matching ^[a-zA-Z0-9_-]{4,12}$ is created (201) and resolves with 301", async () => {
+  test("PBT: any code matching ^[a-zA-Z0-9_-]{4,12}$ is created (201) and resolves with 302", async () => {
     const seen = new Set();
 
     await fc.assert(
@@ -192,7 +193,7 @@ describe("Property 3 (Preservation): PBT — in-range codes create and resolve",
         expect(create.body.shortCode).toBe(code);
 
         const visit = await request(app).get(`/${code}`);
-        expect(visit.status).toBe(301);
+        expect(visit.status).toBe(302);
         expect(visit.headers.location).toBe(originalUrl);
       }),
       { numRuns: 40 }

@@ -6,17 +6,19 @@ function toLean(doc) {
   return {
     _id: o._id,
     originalUrl: o.originalUrl,
+    ownerId: o.ownerId,
     shortCode: o.shortCode,
     clicks: o.clicks,
     clickHistory: o.clickHistory || [],
+    dailyClicks: o.dailyClicks,
     isActive: o.isActive,
     expiresAt: o.expiresAt,
     createdAt: o.createdAt,
   };
 }
 
-async function createUrl({ originalUrl, shortCode }) {
-  const url = await Url.create({ originalUrl, shortCode });
+async function createUrl({ originalUrl, shortCode, expiresAt = null, ownerId }) {
+  const url = await Url.create({ originalUrl, shortCode, expiresAt, ownerId, dailyClicks: [] });
   return toLean(url);
 }
 
@@ -30,31 +32,44 @@ async function findById(id) {
   return u ? toLean(u) : null;
 }
 
-async function listActive(limit) {
-  const rows = await Url.find({ isActive: true })
-    .sort({ createdAt: -1 })
+async function listActive(limit, offset = 0, ownerId) {
+  const rows = await Url.find({ isActive: true, ...(ownerId ? { ownerId } : {}) })
+    .sort({ createdAt: -1, _id: -1 })
+    .skip(offset)
     .limit(limit)
     .select("-clickHistory")
     .lean();
   return rows.map((u) => toLean(u));
 }
 
-async function softDelete(id) {
-  const url = await Url.findByIdAndUpdate(id, { isActive: false }, { new: true }).lean();
+async function softDelete(id, ownerId) {
+  const url = await Url.findOneAndUpdate({ _id: id, ...(ownerId ? { ownerId } : {}) }, { isActive: false }, { new: true }).lean();
   return url ? toLean(url) : null;
 }
 
-async function recordClick(id, { referrer, userAgent }) {
-  await Url.findByIdAndUpdate(id, {
-    $inc: { clicks: 1 },
-    $push: {
-      clickHistory: {
-        timestamp: new Date(),
-        referrer: referrer || "direct",
-        userAgent: userAgent || "",
-      },
-    },
-  });
+async function recordClick(id) {
+  const { recentDays } = require("../utils/analytics");
+  const days = recentDays();
+  // Atomic daily counters; migrate legacy history once, then retain seven UTC days.
+  const legacy = days.map(date => ({ date, clicks: { $size: { $filter: {
+    input: { $ifNull: ["$clickHistory", []] }, as: "click",
+    cond: { $eq: [{ $dateToString: { format: "%Y-%m-%d", date: "$$click.timestamp", timezone: "UTC" } }, date] },
+  } } } }));
+  await Url.findByIdAndUpdate(id, [
+    { $set: { dailyClicks: { $ifNull: ["$dailyClicks", legacy] } } },
+    { $set: {
+      clicks: { $add: ["$clicks", 1] },
+      dailyClicks: days.map(date => ({ date, clicks: { $add: [
+        { $sum: { $map: { input: { $filter: { input: "$dailyClicks", as: "day", cond: { $eq: ["$$day.date", date] } } }, as: "day", in: "$$day.clicks" } } },
+        date === days[6] ? 1 : 0,
+      ] } })),
+      clickHistory: [],
+    } },
+  ]);
+}
+
+async function updateUrl(id, changes, ownerId) {
+  return toLean(await Url.findOneAndUpdate({ _id: id, isActive: true, ...(ownerId ? { ownerId } : {}) }, { $set: changes }, { new: true, runValidators: true }).lean());
 }
 
 module.exports = {
@@ -64,4 +79,5 @@ module.exports = {
   listActive,
   softDelete,
   recordClick,
+  updateUrl,
 };

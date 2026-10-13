@@ -6,8 +6,8 @@
  * durability check.
  *
  * Covered scenarios (design.md → Testing Strategy → Integration Tests):
- *   1. Full create-then-visit flow with an auto-generated code resolves to 301.
- *   2. Create-then-visit flow with an in-range custom code resolves to 301; an
+ *   1. Full create-then-visit flow with an auto-generated code resolves to 302.
+ *   2. Create-then-visit flow with an in-range custom code resolves to 302; an
  *      out-of-range custom code is rejected at creation with 400 and never
  *      produces a visitable link.
  *   3. With a durable store configured, a created link resolves after
@@ -32,6 +32,7 @@
 
 // In-memory store, no rate limiter. Must be set before requiring the app/store.
 process.env.NODE_ENV = "test";
+process.env.AUTH_MODE = "public";
 delete process.env.MONGODB_URI;
 
 const request = require("supertest");
@@ -50,8 +51,8 @@ beforeAll(async () => {
 
 describe("Integration: full create-then-visit flow (auto-generated code)", () => {
   // Requirement 3.1: a valid auto-generated code (nanoid, 6 chars) is created
-  // and redirects with 301 when visited.
-  test("auto-generated code is created (201) and resolves to a 301 redirect", async () => {
+  // and redirects with 302 when visited.
+  test("auto-generated code is created (201) and resolves to a 302 redirect", async () => {
     const originalUrl = "https://example.com/auto-flow";
 
     const create = await request(app).post("/api/urls").send({ originalUrl });
@@ -62,14 +63,14 @@ describe("Integration: full create-then-visit flow (auto-generated code)", () =>
     expect(VERCEL_ROUTE.test(`/${code}`)).toBe(true); // vercel.json would forward it
 
     const visit = await request(app).get(`/${code}`);
-    expect(visit.status).toBe(301);
+    expect(visit.status).toBe(302);
     expect(visit.headers.location).toBe(originalUrl);
   });
 });
 
 describe("Integration: full create-then-visit flow (custom code)", () => {
   // Requirement 3.2: an in-range custom code is accepted and redirects.
-  test("in-range custom code is created (201) and resolves to a 301 redirect", async () => {
+  test("in-range custom code is created (201) and resolves to a 302 redirect", async () => {
     const originalUrl = "https://example.com/custom-flow";
     const customCode = "promo7"; // 6 chars, in range, routable
 
@@ -81,7 +82,7 @@ describe("Integration: full create-then-visit flow (custom code)", () => {
     expect(VERCEL_ROUTE.test(`/${customCode}`)).toBe(true);
 
     const visit = await request(app).get(`/${customCode}`);
-    expect(visit.status).toBe(301);
+    expect(visit.status).toBe(302);
     expect(visit.headers.location).toBe(originalUrl);
   });
 
@@ -179,7 +180,7 @@ describe("Integration: durability guarantee across a simulated restart", () => {
     const resolved = await instanceB.findByShortCode(code);
 
     // Durability guarantee: the mapping is still present, so GET /:code would
-    // resolve and issue a 301 to the original URL.
+    // resolve and issue a 302 to the original URL.
     expect(resolved).not.toBeNull();
     expect(resolved.originalUrl).toBe(originalUrl);
     expect(resolved.isActive).toBe(true);

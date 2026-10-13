@@ -1,0 +1,36 @@
+process.env.NODE_ENV = "test";
+process.env.AUTH_MODE = "accounts";
+delete process.env.MONGODB_URI;
+const request = require("supertest");
+const { app } = require("../src/index");
+const { initStore, getStore } = require("../src/store");
+beforeAll(() => initStore());
+
+test("accounts isolate every management operation and logout revokes sessions", async () => {
+  const password = "test-password-long-enough";
+  const a = await request(app).post("/api/auth/register").send({ email: "a@example.com", password });
+  const b = await request(app).post("/api/auth/register").send({ email: "b@example.com", password });
+  expect(a.status).toBe(201); expect(b.status).toBe(201);
+  const authA = `Bearer ${a.body.token}`;
+  const authB = `Bearer ${b.body.token}`;
+  expect((await request(app).get("/api/urls")).status).toBe(401);
+  const created = await request(app).post("/api/urls").set("Authorization", authA).send({ originalUrl: "https://example.com" });
+  expect(created.status).toBe(201);
+  const id = created.body._id;
+  expect((await request(app).get("/api/urls").set("Authorization", authA)).body[0]._id).toBe(id);
+  expect((await request(app).get(`/api/urls/${id}/stats`).set("Authorization", authA)).status).toBe(200);
+  expect((await request(app).patch(`/api/urls/${id}`).set("Authorization", authA).send({ expiresAt: null })).status).toBe(200);
+  expect((await request(app).get("/api/urls").set("Authorization", authB)).body).toEqual([]);
+  expect((await request(app).get(`/api/urls/${id}/stats`).set("Authorization", authB)).status).toBe(404);
+  expect((await request(app).patch(`/api/urls/${id}`).set("Authorization", authB).send({ originalUrl: "https://attacker.example" })).status).toBe(404);
+  expect((await request(app).delete(`/api/urls/${id}`).set("Authorization", authB)).status).toBe(404);
+  const stored = await getStore().findById(id);
+  expect(stored.originalUrl).toBe("https://example.com"); expect(stored.isActive).toBe(true);
+  expect((await request(app).get(`/${created.body.shortCode}`)).status).toBe(302);
+  const bad = await request(app).post("/api/auth/login").send({ email: "a@example.com", password: "wrong-password-long" });
+  expect(bad.status).toBe(401);
+  const login = await request(app).post("/api/auth/login").send({ email: "a@example.com", password });
+  expect(login.status).toBe(200);
+  await request(app).post("/api/auth/logout").set("Authorization", `Bearer ${login.body.token}`);
+  expect((await request(app).get("/api/urls").set("Authorization", `Bearer ${login.body.token}`)).status).toBe(401);
+});

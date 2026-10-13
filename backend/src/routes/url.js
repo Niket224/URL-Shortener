@@ -4,28 +4,37 @@ const { nanoid } = require("nanoid");
 const { getStore } = require("../store");
 const { isValidCode, CODE_CONSTRAINT_MESSAGE } = require("../utils/code");
 
-function baseUrl() {
-  return process.env.BASE_URL || `http://localhost:${process.env.PORT || 5001}`;
-}
+const { baseUrl } = require("../config");
+const { validateDestination, parseExpiry } = require("../utils/validation");
+const { recentDays, dailyCounts } = require("../utils/analytics");
+
+router.param("id", (req, res, next, id) => {
+  if (!/^[a-f\d]{24}$/i.test(id)) return res.status(400).json({ error: "Invalid URL id" });
+  next();
+});
 
 // POST /api/urls — shorten a URL
 router.post("/", async (req, res) => {
   try {
-    const { originalUrl, customCode } = req.body;
+    const { originalUrl, customCode } = req.body || {};
     const store = getStore();
 
     if (!originalUrl) {
       return res.status(400).json({ error: "originalUrl is required" });
     }
 
-    try {
-      new URL(originalUrl);
-    } catch {
+    if (!validateDestination(originalUrl)) {
       return res.status(400).json({ error: "Invalid URL format" });
+    }
+    let expiresAt;
+    try { expiresAt = parseExpiry(req.body.expiresAt); }
+    catch (err) { return res.status(400).json({ error: err.message }); }
+    if (customCode !== undefined && typeof customCode !== "string") {
+      return res.status(400).json({ error: CODE_CONSTRAINT_MESSAGE });
     }
 
     const trimmedCustom = typeof customCode === "string" ? customCode.trim() : "";
-    const shortCode = trimmedCustom || nanoid(6);
+    let shortCode = trimmedCustom || nanoid(6);
 
     if (trimmedCustom) {
       if (!isValidCode(trimmedCustom)) {
@@ -39,7 +48,17 @@ router.post("/", async (req, res) => {
       }
     }
 
-    const url = await store.createUrl({ originalUrl, shortCode });
+    let url;
+    for (let attempt = 0; attempt < 5; attempt++) {
+      try {
+        url = await store.createUrl({ originalUrl: originalUrl.trim(), shortCode, expiresAt, ownerId: req.userId });
+        break;
+      } catch (err) {
+        if (err.code !== 11000 || trimmedCustom) throw err;
+        shortCode = nanoid(6);
+      }
+    }
+    if (!url) return res.status(503).json({ error: "Could not allocate a short code. Please retry." });
 
     res.status(201).json({
       _id: url._id,
@@ -48,6 +67,7 @@ router.post("/", async (req, res) => {
       shortUrl: `${baseUrl()}/${url.shortCode}`,
       clicks: url.clicks,
       createdAt: url.createdAt,
+      expiresAt: url.expiresAt,
     });
   } catch (err) {
     if (err.code === 11000) {
@@ -65,7 +85,14 @@ router.post("/", async (req, res) => {
 router.get("/", async (req, res) => {
   try {
     const store = getStore();
-    const urls = await store.listActive(50);
+    const page = Number(req.query.page || 1);
+    const limit = Number(req.query.limit || 50);
+    if (!Number.isInteger(page) || page < 1 || page > 10000 || !Number.isInteger(limit) || limit < 1 || limit > 100) {
+      return res.status(400).json({ error: "Invalid pagination: page >= 1, limit between 1 and 100" });
+    }
+    const rows = await store.listActive(limit + 1, (page - 1) * limit, req.userId);
+    res.set("X-Has-More", String(rows.length > limit));
+    const urls = rows.slice(0, limit);
 
     res.json(
       urls.map((u) => ({
@@ -75,6 +102,7 @@ router.get("/", async (req, res) => {
         shortUrl: `${baseUrl()}/${u.shortCode}`,
         clicks: u.clicks,
         createdAt: u.createdAt,
+        expiresAt: u.expiresAt,
       }))
     );
   } catch (err) {
@@ -88,19 +116,14 @@ router.get("/:id/stats", async (req, res) => {
   try {
     const store = getStore();
     const url = await store.findById(req.params.id);
-    if (!url) return res.status(404).json({ error: "URL not found" });
+    if (!url || (req.userId && url.ownerId !== req.userId)) return res.status(404).json({ error: "URL not found" });
 
-    const now = new Date();
-    const days = Array.from({ length: 7 }, (_, i) => {
-      const d = new Date(now);
-      d.setDate(d.getDate() - (6 - i));
-      return d.toISOString().split("T")[0];
-    });
-
-    const history = url.clickHistory || [];
+    if (!url.isActive) return res.status(404).json({ error: "URL not found" });
+    const days = recentDays();
+    const counts = dailyCounts(url);
     const clicksByDay = days.map((day) => ({
       date: day,
-      clicks: history.filter((c) => new Date(c.timestamp).toISOString().split("T")[0] === day).length,
+      clicks: counts.find(c => c.date === day)?.clicks || 0,
     }));
 
     res.json({
@@ -111,6 +134,7 @@ router.get("/:id/stats", async (req, res) => {
       totalClicks: url.clicks,
       clicksByDay,
       createdAt: url.createdAt,
+      expiresAt: url.expiresAt,
     });
   } catch (err) {
     console.error("GET /api/urls/:id/stats", err);
@@ -122,13 +146,32 @@ router.get("/:id/stats", async (req, res) => {
 router.delete("/:id", async (req, res) => {
   try {
     const store = getStore();
-    const url = await store.softDelete(req.params.id);
+    const url = await store.softDelete(req.params.id, req.userId);
     if (!url) return res.status(404).json({ error: "URL not found" });
     res.json({ message: "URL deleted successfully" });
   } catch (err) {
     console.error("DELETE /api/urls/:id", err);
     res.status(500).json({ error: "Server error" });
   }
+});
+
+router.patch("/:id", async (req, res) => {
+  try {
+    const changes = {};
+    if (req.body?.originalUrl !== undefined) {
+      if (!validateDestination(req.body.originalUrl)) return res.status(400).json({ error: "Invalid URL format" });
+      changes.originalUrl = req.body.originalUrl.trim();
+    }
+    if (req.body?.expiresAt !== undefined) {
+      try { changes.expiresAt = parseExpiry(req.body.expiresAt); }
+      catch (err) { return res.status(400).json({ error: err.message }); }
+    }
+    if (!Object.keys(changes).length) return res.status(400).json({ error: "No supported changes" });
+    const url = await getStore().updateUrl(req.params.id, changes, req.userId);
+    if (!url) return res.status(404).json({ error: "URL not found" });
+    res.json({ _id: url._id, originalUrl: url.originalUrl, shortCode: url.shortCode,
+      shortUrl: `${baseUrl()}/${url.shortCode}`, clicks: url.clicks, expiresAt: url.expiresAt, createdAt: url.createdAt });
+  } catch (err) { res.status(500).json({ error: "Server error" }); }
 });
 
 module.exports = router;

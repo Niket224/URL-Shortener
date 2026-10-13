@@ -1,15 +1,8 @@
 import { useState, useEffect, useCallback } from "react";
+import AuthGate from "./AuthGate";
+import Dialog from "./Dialog";
+import EditLink from "./EditLink";
 import { shortenUrl, getUrls, deleteUrl, getStats } from "./api";
-
-// Short links still point at the API host (redirects are served there).
-const BASE_URL =
-  import.meta.env.VITE_BASE_URL !== undefined && import.meta.env.VITE_BASE_URL !== ""
-    ? import.meta.env.VITE_BASE_URL
-    : import.meta.env.DEV
-      ? "http://localhost:5001"
-      : typeof window !== "undefined"
-        ? window.location.origin
-        : "http://localhost:5001";
 
 function normalizeUrlInput(raw) {
   const t = raw.trim();
@@ -22,10 +15,10 @@ function apiErrorMessage(err) {
   const msg = err.response?.data?.error;
   if (typeof msg === "string") return msg;
   if (err.response?.status === 403) {
-    return "Got 403 from port 5000 — that's usually macOS AirPlay, not this app. Restart the backend (npm start uses port 5001) and refresh the page.";
+    return "Access denied. Please sign in again.";
   }
   if (err.code === "ERR_NETWORK" || err.message === "Network Error") {
-    return "Cannot reach the API. In one terminal run: cd backend && npm start (MongoDB is optional locally). In another: cd frontend && npm run dev. Then open http://localhost:5173";
+    return "Cannot reach the service. Please try again shortly.";
   }
   if (err.response?.status === 429) {
     return "Too many requests. Wait a few minutes and try again.";
@@ -52,23 +45,22 @@ function timeAgo(dateStr) {
 function StatsModal({ urlItem, onClose }) {
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
+    let active = true;
+    setLoading(true);
     getStats(urlItem._id)
-      .then((r) => setStats(r.data))
-      .catch(console.error)
-      .finally(() => setLoading(false));
-  }, [urlItem._id]);
+      .then((r) => { if (active) setStats(r.data); })
+      .catch(() => { if (active) setStats(null); })
+      .finally(() => { if (active) setLoading(false); });
+    return () => { active = false; };
+  }, [urlItem._id, attempt]);
 
   const maxClicks = stats ? Math.max(...stats.clicksByDay.map((d) => d.clicks), 1) : 1;
 
   return (
-    <div style={styles.overlay} onClick={onClose}>
-      <div style={styles.modal} onClick={(e) => e.stopPropagation()}>
-        <div style={styles.modalHeader}>
-          <span style={styles.modalTitle}>Analytics</span>
-          <button style={styles.closeBtn} onClick={onClose}>✕</button>
-        </div>
+    <Dialog title="Analytics" onClose={onClose}>
 
         {loading ? (
           <div style={styles.loading}>Loading stats…</div>
@@ -87,7 +79,7 @@ function StatsModal({ urlItem, onClose }) {
               </div>
             </div>
 
-            <div style={styles.chartLabel}>Last 7 Days</div>
+            <div style={styles.chartLabel}>Last 7 Days (UTC)</div>
             <div style={styles.chart}>
               {stats.clicksByDay.map((d) => (
                 <div key={d.date} style={styles.barWrap}>
@@ -100,37 +92,36 @@ function StatsModal({ urlItem, onClose }) {
                     }}
                   />
                   <span style={styles.barDate}>
-                    {new Date(d.date).toLocaleDateString("en", { weekday: "short" })}
+                    {new Date(d.date).toLocaleDateString("en", { weekday: "short", timeZone: "UTC" })}
                   </span>
                 </div>
               ))}
             </div>
 
             <div style={styles.shortUrlDisplay}>
-              <span style={styles.monoText}>{BASE_URL}/{stats.shortCode}</span>
+              <span style={styles.monoText}>{stats.shortUrl}</span>
             </div>
           </>
         ) : (
-          <div style={styles.loading}>Failed to load stats.</div>
+          <div role="alert" style={styles.loading}>Failed to load stats. <button onClick={() => setAttempt(attempt + 1)}>Retry</button></div>
         )}
-      </div>
-    </div>
+    </Dialog>
   );
 }
 
 // ── UrlCard ───────────────────────────────────────────────────────────────────
-function UrlCard({ item, onDelete, onStats }) {
+function UrlCard({ item, onDelete, onStats, onEdit }) {
   const [copied, setCopied] = useState(false);
-  const shortUrl = `${BASE_URL}/${item.shortCode}`;
+  const [copyError, setCopyError] = useState("");
+  const shortUrl = item.shortUrl;
 
-  const handleCopy = () => {
-    navigator.clipboard.writeText(shortUrl);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+  const handleCopy = async () => {
+    try { await navigator.clipboard.writeText(shortUrl); setCopied(true); setCopyError(""); }
+    catch { setCopyError("Copy failed. Select the link to copy it manually."); }
   };
 
   return (
-    <div style={styles.card}>
+    <article style={styles.card}>
       <div style={styles.cardTop}>
         <div style={styles.domain}>{getDomain(item.originalUrl)}</div>
         <div style={styles.cardMeta}>
@@ -140,7 +131,7 @@ function UrlCard({ item, onDelete, onStats }) {
       </div>
 
       <div style={styles.shortCodeRow}>
-        <span style={styles.shortCode}>/{item.shortCode}</span>
+        <span style={styles.shortCode}>{shortUrl}</span>
         <div style={styles.cardActions}>
           <button style={styles.iconBtn} onClick={handleCopy} title="Copy">
             {copied ? "✓" : "⎘"}
@@ -158,15 +149,27 @@ function UrlCard({ item, onDelete, onStats }) {
         </div>
       </div>
 
+      <button onClick={() => onEdit(item)}>Edit</button>
+      {item.expiresAt && <p>{new Date(item.expiresAt) <= new Date() ? "Expired" : "Expires"}: {new Date(item.expiresAt).toLocaleString()}</p>}
+      {copyError && <p role="alert">{copyError}</p>}
+      {copied && <span role="status">Copied!</span>}
       <div style={styles.originalUrl} title={item.originalUrl}>
         {item.originalUrl.length > 60 ? item.originalUrl.slice(0, 60) + "…" : item.originalUrl}
       </div>
-    </div>
+    </article>
   );
 }
 
 // ── App ───────────────────────────────────────────────────────────────────────
-export default function App() {
+export default function App() { return <AuthGate><Dashboard /></AuthGate>; }
+
+function Dashboard() {
+  const [page, setPage] = useState(1);
+  const [hasMore, setHasMore] = useState(false);
+  const [expiresAt, setExpiresAt] = useState("");
+  const [editItem, setEditItem] = useState(null);
+  const [notice, setNotice] = useState("");
+  const [listError, setListError] = useState("");
   const [inputUrl, setInputUrl] = useState("");
   const [customCode, setCustomCode] = useState("");
   const [showCustom, setShowCustom] = useState(false);
@@ -179,15 +182,17 @@ export default function App() {
 
   const fetchUrls = useCallback(() => {
     setFetching(true);
-    getUrls()
-      .then((r) => setUrls(r.data))
-      .catch(console.error)
+    setListError("");
+    getUrls(page)
+      .then((r) => { setUrls(r.data); setHasMore(r.headers["x-has-more"] === "true"); })
+      .catch(() => setListError("Could not load links. Please retry."))
       .finally(() => setFetching(false));
-  }, []);
+  }, [page]);
 
   useEffect(() => { fetchUrls(); }, [fetchUrls]);
 
   const handleSubmit = async () => {
+    if (loading) return;
     setError("");
     setSuccess(null);
 
@@ -204,12 +209,14 @@ export default function App() {
       const res = await shortenUrl({
         originalUrl: normalized,
         customCode: customCode.trim() || undefined,
+        expiresAt: expiresAt ? new Date(expiresAt).toISOString() : null,
       });
       setSuccess(res.data);
+      setExpiresAt("");
       setInputUrl("");
       setCustomCode("");
       setShowCustom(false);
-      fetchUrls();
+      if (page !== 1) setPage(1); else fetchUrls();
     } catch (err) {
       setError(apiErrorMessage(err));
     } finally {
@@ -220,16 +227,16 @@ export default function App() {
   const handleDelete = async (id) => {
     try {
       await deleteUrl(id);
-      setUrls((prev) => prev.filter((u) => u._id !== id));
+      if (urls.length === 1 && page > 1) setPage(page - 1); else fetchUrls();
+      setSuccess(prev => prev?._id === id ? null : prev);
     } catch (err) {
-      console.error(err);
+      setError(apiErrorMessage(err));
     }
   };
 
-  const handleCopySuccess = () => {
-    if (success) {
-      navigator.clipboard.writeText(success.shortUrl);
-    }
+  const handleCopySuccess = async () => {
+    try { await navigator.clipboard.writeText(success.shortUrl); setNotice("Copied!"); }
+    catch { setError("Copy failed. Select and copy the link manually."); }
   };
 
   return (
@@ -258,9 +265,10 @@ export default function App() {
 
         {/* Input card */}
         <div style={styles.inputCard}>
-          <div style={styles.inputRow}>
+          <div className="input-row" style={styles.inputRow}>
             <input
               style={styles.input}
+              aria-label="Destination URL"
               type="text"
               placeholder="https://your-long-url.com/goes-here"
               value={inputUrl}
@@ -287,10 +295,11 @@ export default function App() {
 
           {showCustom && (
             <div style={styles.customInput}>
-              <span style={styles.basePrefix}>{getDomain(BASE_URL)}/</span>
+              <span style={styles.basePrefix}>Code:</span>
               <input
                 style={styles.inputSmall}
-                placeholder="my-custom-code"
+                aria-label="Custom short code"
+                placeholder="my-code"
                 value={customCode}
                 onChange={(e) => setCustomCode(e.target.value)}
                 maxLength={12}
@@ -298,7 +307,9 @@ export default function App() {
             </div>
           )}
 
-          {error && <div style={styles.errorMsg}>{error}</div>}
+          <label className="expiry">Expiration (optional, local time)<input aria-label="Expiration" type="datetime-local" value={expiresAt} onChange={e => setExpiresAt(e.target.value)} /></label>
+          {notice && <p role="status">{notice}</p>}
+          {error && <div role="alert" style={styles.errorMsg}>{error}</div>}
 
           {success && (
             <div style={styles.successBox}>
@@ -317,10 +328,10 @@ export default function App() {
         <div style={styles.section}>
           <div style={styles.sectionHeader}>
             <h2 style={styles.h2}>Your Links</h2>
-            <span style={styles.count}>{urls.length} total</span>
+            <span style={styles.count}>{urls.length} on this page</span>
           </div>
 
-          {fetching ? (
+          {listError ? <div role="alert">{listError} <button onClick={fetchUrls}>Retry</button></div> : fetching ? (
             <div style={styles.emptyState}>Loading…</div>
           ) : urls.length === 0 ? (
             <div style={styles.emptyState}>No links yet. Shorten your first URL above.</div>
@@ -332,17 +343,20 @@ export default function App() {
                   item={u}
                   onDelete={handleDelete}
                   onStats={setStatsItem}
+                  onEdit={setEditItem}
                 />
               ))}
             </div>
           )}
+          <nav aria-label="Link pages" className="pagination"><button disabled={page === 1 || fetching} onClick={() => setPage(page - 1)}>Previous</button><span>Page {page}</span><button disabled={!hasMore || fetching} onClick={() => setPage(page + 1)}>Next</button></nav>
         </div>
       </main>
 
       <footer style={styles.footer}>
-        Built with React + Node.js + MongoDB · Deployed on Vercel
+        Built with React + Node.js + MongoDB · Vercel + Render
       </footer>
 
+      {editItem && <EditLink item={editItem} onClose={() => setEditItem(null)} onSaved={fetchUrls} />}
       {statsItem && (
         <StatsModal urlItem={statsItem} onClose={() => setStatsItem(null)} />
       )}
@@ -418,6 +432,7 @@ const styles = {
   inputRow: { display: "flex", gap: 12, marginBottom: 12 },
   input: {
     flex: 1,
+    minWidth: 0,
     background: "var(--surface2)",
     border: "1px solid var(--border)",
     borderRadius: "var(--radius)",
@@ -496,6 +511,8 @@ const styles = {
   },
   successLink: { display: "flex", alignItems: "center", gap: 12 },
   successUrl: {
+    minWidth: 0,
+    overflowWrap: "anywhere",
     fontFamily: "var(--font-mono)",
     fontSize: 15,
     fontWeight: 500,
@@ -533,7 +550,7 @@ const styles = {
   },
   grid: {
     display: "grid",
-    gridTemplateColumns: "repeat(auto-fill, minmax(360px, 1fr))",
+    gridTemplateColumns: "repeat(auto-fill, minmax(min(100%, 360px), 1fr))",
     gap: 16,
   },
   emptyState: {
@@ -585,13 +602,15 @@ const styles = {
     marginBottom: 8,
   },
   shortCode: {
+    overflowWrap: "anywhere",
+    minWidth: 0,
     fontFamily: "var(--font-mono)",
     fontSize: 20,
     fontWeight: 500,
     color: "var(--accent)",
     letterSpacing: "-0.5px",
   },
-  cardActions: { display: "flex", gap: 6 },
+  cardActions: { display: "flex", gap: 6, flexShrink: 0 },
   iconBtn: {
     background: "var(--surface2)",
     border: "1px solid var(--border)",

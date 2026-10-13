@@ -19,6 +19,7 @@
 // Disable the rate limiter and ensure no durable store is configured for the
 // in-memory exploration scenarios. Must be set before requiring the app/store.
 process.env.NODE_ENV = "test";
+process.env.AUTH_MODE = "public";
 delete process.env.MONGODB_URI;
 
 const request = require("supertest");

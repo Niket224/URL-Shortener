@@ -23,12 +23,13 @@ router.get("/:code", async (req, res) => {
       return res.status(410).json({ error: "This short URL has expired" });
     }
 
-    await store.recordClick(url._id, {
-      referrer: req.headers.referer || "direct",
-      userAgent: req.headers["user-agent"] || "",
-    });
+    // HEAD probes should not count as visits. Analytics failure must not break links.
+    if (req.method !== "HEAD") {
+      try { await store.recordClick(url._id); }
+      catch (err) { console.error("Click recording failed:", err.name); }
+    }
 
-    res.redirect(301, url.originalUrl);
+    res.set("Cache-Control", "no-store").redirect(302, url.originalUrl);
   } catch (err) {
     console.error("GET /:code redirect", err);
     res.status(500).json({ error: "Server error" });

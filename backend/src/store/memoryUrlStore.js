@@ -1,4 +1,5 @@
 const crypto = require("crypto");
+const { recentDays, dailyCounts } = require("../utils/analytics");
 const { isValidCode, CODE_CONSTRAINT_MESSAGE } = require("../utils/code");
 
 /** In-memory store when MongoDB is not configured (local dev / quick try). */
@@ -14,16 +15,18 @@ function toLean(doc) {
   return {
     _id: doc._id,
     originalUrl: doc.originalUrl,
+    ownerId: doc.ownerId,
     shortCode: doc.shortCode,
     clicks: doc.clicks,
     clickHistory: doc.clickHistory,
+    dailyClicks: doc.dailyClicks,
     isActive: doc.isActive,
     expiresAt: doc.expiresAt,
     createdAt: doc.createdAt,
   };
 }
 
-function createUrl({ originalUrl, shortCode }) {
+function createUrl({ originalUrl, shortCode, expiresAt = null, ownerId }) {
   // Defense in depth: mirror the canonical code constraint so the in-memory
   // store can never create an unroutable link, even if called directly. The
   // error is shaped like a Mongoose ValidationError so the API maps it to a
@@ -43,12 +46,14 @@ function createUrl({ originalUrl, shortCode }) {
   const now = new Date();
   const doc = {
     _id,
+    ownerId,
     originalUrl,
     shortCode,
     clicks: 0,
     clickHistory: [],
     isActive: true,
-    expiresAt: null,
+    expiresAt,
+    dailyClicks: [],
     createdAt: now,
   };
   urlsById.set(_id, doc);
@@ -70,11 +75,11 @@ async function findById(id) {
   return toLean(doc);
 }
 
-async function listActive(limit) {
+async function listActive(limit, offset = 0, ownerId) {
   return [...urlsById.values()]
-    .filter((u) => u.isActive)
+    .filter((u) => u.isActive && (!ownerId || u.ownerId === ownerId))
     .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
-    .slice(0, limit)
+    .slice(offset, offset + limit)
     .map((u) => ({
       _id: u._id,
       originalUrl: u.originalUrl,
@@ -86,22 +91,32 @@ async function listActive(limit) {
     }));
 }
 
-async function softDelete(id) {
+async function softDelete(id, ownerId) {
   const doc = urlsById.get(String(id));
   if (!doc) return null;
+  if (ownerId && doc.ownerId !== ownerId) return null;
   doc.isActive = false;
   return toLean(doc);
 }
 
-async function recordClick(id, { referrer, userAgent }) {
+async function recordClick(id) {
   const doc = urlsById.get(String(id));
   if (!doc) return;
   doc.clicks += 1;
-  doc.clickHistory.push({
-    timestamp: new Date(),
-    referrer: referrer || "direct",
-    userAgent: userAgent || "",
-  });
+  const days = recentDays();
+  doc.dailyClicks = dailyCounts(doc).filter(c => c.date >= days[0]);
+  const today = doc.dailyClicks.find(c => c.date === days[6]);
+  if (today) today.clicks++;
+  else doc.dailyClicks.push({ date: days[6], clicks: 1 });
+  doc.clickHistory = [];
+}
+
+async function updateUrl(id, changes, ownerId) {
+  const doc = urlsById.get(String(id));
+  if (!doc || !doc.isActive) return null;
+  if (ownerId && doc.ownerId !== ownerId) return null;
+  Object.assign(doc, changes);
+  return toLean(doc);
 }
 
 module.exports = {
@@ -111,4 +126,5 @@ module.exports = {
   listActive,
   softDelete,
   recordClick,
+  updateUrl,
 };

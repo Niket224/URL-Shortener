@@ -14,6 +14,7 @@ const urlSchema = new mongoose.Schema(
       required: true,
       trim: true,
     },
+    ownerId: { type: String, index: true },
     shortCode: {
       type: String,
       required: true,
@@ -30,6 +31,7 @@ const urlSchema = new mongoose.Schema(
       default: 0,
     },
     clickHistory: [clickSchema],
+    dailyClicks: { type: [{ date: String, clicks: Number, _id: false }], default: undefined },
     isActive: {
       type: Boolean,
       default: true,

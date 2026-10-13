@@ -1,0 +1,61 @@
+import { test, expect } from "@playwright/test";
+import os from "node:os";
+import path from "node:path";
+
+test("register, create, copy, redirect, stats, edit, delete, and sign in", async ({ page, request }, testInfo) => {
+  const errors = [];
+  page.on("pageerror", error => errors.push(error.message));
+  page.on("console", msg => { if (msg.type() === "error") errors.push(msg.text()); });
+  // Fonts are cosmetic and tests must not depend on an external network.
+  await page.route(/fonts\.(googleapis|gstatic)\.com/, route => route.fulfill({ body: "", contentType: "text/css" }));
+  await page.goto("/");
+  await expect(page).toHaveTitle(/Snip/);
+  await expect(page.getByRole("heading", { name: "Sign in to Snip" })).toBeVisible();
+  await page.getByRole("button", { name: "Create an account", exact: true }).click();
+  const email = `browser-${Date.now()}-${testInfo.project.name}@example.com`;
+  await page.getByLabel("Email", { exact: true }).fill(email);
+  await page.getByLabel("Password", { exact: true }).fill("browser-test-password");
+  await page.getByRole("button", { name: "Create account", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Your Links" })).toBeVisible();
+  await page.getByLabel("Destination URL", { exact: true }).fill("https://example.com/browser");
+  await page.getByRole("button", { name: /Shorten/ }).click();
+  const card = page.locator("article").first();
+  await expect(card).toBeVisible();
+  await card.getByTitle("Copy", { exact: true }).click();
+  await expect(card.getByRole("status")).toHaveText("Copied!");
+  const shortUrl = await page.evaluate(() => navigator.clipboard.readText());
+  expect(shortUrl).toMatch(/^http:\/\/127\.0\.0\.1:5101\/[\w-]{6}$/);
+  const redirected = await request.get(shortUrl, { maxRedirects: 0 });
+  expect(redirected.status()).toBe(302);
+  expect(redirected.headers().location).toBe("https://example.com/browser");
+  await card.getByTitle("Stats", { exact: true }).click();
+  const stats = page.getByRole("dialog", { name: "Analytics" });
+  await expect(stats.getByText(shortUrl, { exact: true })).toBeVisible();
+  await expect(stats.getByText("Total Clicks", { exact: true }).locator("..")).toContainText("1");
+  await page.keyboard.press("Escape");
+  await expect(stats).not.toBeVisible();
+  await expect(card.getByTitle("Stats", { exact: true })).toBeFocused();
+  await card.getByRole("button", { name: "Edit", exact: true }).click();
+  const edit = page.getByRole("dialog", { name: "Edit link" });
+  await edit.getByLabel("Destination URL").fill("https://example.com/edited");
+  await edit.getByRole("button", { name: "Save changes" }).click();
+  await expect(edit).not.toBeVisible();
+  expect((await request.get(shortUrl, { maxRedirects: 0 })).headers().location).toBe("https://example.com/edited");
+  const fits = await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth);
+  expect(fits).toBe(true);
+  for (const button of await page.getByRole("button").all()) {
+    const box = await button.boundingBox();
+    if (box) expect(box.x + box.width).toBeLessThanOrEqual(page.viewportSize().width);
+  }
+  await expect(page.locator("vite-error-overlay")).toHaveCount(0);
+  await page.screenshot({ path: path.join(os.tmpdir(), `snip-${testInfo.project.name}.png`), fullPage: true });
+  await card.getByTitle("Delete", { exact: true }).click();
+  await expect(page.locator("article")).toHaveCount(0);
+  expect((await request.get(shortUrl, { maxRedirects: 0 })).status()).toBe(404);
+  await page.getByRole("button", { name: "Sign out" }).click();
+  await page.getByLabel("Email", { exact: true }).fill(email);
+  await page.getByLabel("Password", { exact: true }).fill("browser-test-password");
+  await page.getByRole("button", { name: "Sign in", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Your Links" })).toBeVisible();
+  expect(errors).toEqual([]);
+});
