@@ -104,11 +104,11 @@ async function recordClick(id) {
   if (!doc) return;
   doc.clicks += 1;
   const days = recentDays();
-  doc.dailyClicks = dailyCounts(doc).filter(c => c.date >= days[0]);
+  doc.dailyClicks = dailyCounts(doc).filter(c => days.includes(c.date));
   const today = doc.dailyClicks.find(c => c.date === days[6]);
   if (today) today.clicks++;
   else doc.dailyClicks.push({ date: days[6], clicks: 1 });
-  doc.clickHistory = [];
+  // Legacy raw events are immutable; new clicks only update daily totals.
 }
 
 async function updateUrl(id, changes, ownerId) {

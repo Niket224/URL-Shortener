@@ -7,7 +7,7 @@ import { shortenUrl, getUrls, deleteUrl, getStats } from "./api";
 function normalizeUrlInput(raw) {
   const t = raw.trim();
   if (!t) return "";
-  if (/^https?:\/\//i.test(t)) return t;
+  if (/^[a-z][a-z\d+.-]*:/i.test(t)) return t;
   return `https://${t}`;
 }
 
@@ -117,7 +117,7 @@ function UrlCard({ item, onDelete, onStats, onEdit }) {
 
   const handleCopy = async () => {
     try { await navigator.clipboard.writeText(shortUrl); setCopied(true); setCopyError(""); }
-    catch { setCopyError("Copy failed. Select the link to copy it manually."); }
+    catch { setCopied(false); setCopyError("Copy failed. Select the link to copy it manually."); }
   };
 
   return (
@@ -133,16 +133,17 @@ function UrlCard({ item, onDelete, onStats, onEdit }) {
       <div style={styles.shortCodeRow}>
         <span style={styles.shortCode}>{shortUrl}</span>
         <div style={styles.cardActions}>
-          <button style={styles.iconBtn} onClick={handleCopy} title="Copy">
+          <button style={styles.iconBtn} onClick={handleCopy} title="Copy" aria-label="Copy short link">
             {copied ? "✓" : "⎘"}
           </button>
-          <button style={styles.iconBtn} onClick={() => onStats(item)} title="Stats">
+          <button style={styles.iconBtn} onClick={() => onStats(item)} title="Stats" aria-label="View analytics">
             ▦
           </button>
           <button
             style={{ ...styles.iconBtn, ...styles.deleteBtn }}
             onClick={() => onDelete(item._id)}
             title="Delete"
+            aria-label="Delete link"
           >
             ✕
           </button>
@@ -194,12 +195,14 @@ function Dashboard() {
   const handleSubmit = async () => {
     if (loading) return;
     setError("");
+    setNotice("");
     setSuccess(null);
 
     if (!inputUrl.trim()) return setError("Please enter a URL.");
     const normalized = normalizeUrlInput(inputUrl);
     try {
-      new URL(normalized);
+      const parsed = new URL(normalized);
+      if (!["http:", "https:"].includes(parsed.protocol)) throw new Error();
     } catch {
       return setError("Enter a valid URL (e.g. example.com or https://example.com).");
     }
@@ -236,7 +239,7 @@ function Dashboard() {
 
   const handleCopySuccess = async () => {
     try { await navigator.clipboard.writeText(success.shortUrl); setNotice("Copied!"); }
-    catch { setError("Copy failed. Select and copy the link manually."); }
+    catch { setNotice(""); setError("Copy failed. Select and copy the link manually."); }
   };
 
   return (

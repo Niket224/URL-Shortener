@@ -1,0 +1,86 @@
+{
+  "measuredAt": "2026-10-13T14:09:29.115Z",
+  "classification": "SYNTHETIC BENCHMARK DATA; NOT PRODUCTION",
+  "environment": {
+    "api": "local Express on loopback",
+    "database": "MongoDB Atlas snip_test",
+    "node": "v22.18.0",
+    "platform": "win32",
+    "mongoose": "8.24.5",
+    "rateLimiter": "disabled (test mode)",
+    "redirectFollowing": false,
+    "backgroundWork": "Backend npm ci overlapped this run; do not treat latency/throughput as an isolated-host measurement."
+  },
+  "mongo": {
+    "datasetSize": 2000,
+    "query": {
+      "shortCode": "b001jj",
+      "isActive": true
+    },
+    "before": {
+      "executionTimeMillis": 1,
+      "nReturned": 1,
+      "totalDocsExamined": 2000,
+      "totalKeysExamined": 0,
+      "stages": [
+        "COLLSCAN"
+      ],
+      "indexes": []
+    },
+    "after": {
+      "executionTimeMillis": 1,
+      "nReturned": 1,
+      "totalDocsExamined": 1,
+      "totalKeysExamined": 1,
+      "stages": [
+        "FETCH",
+        "IXSCAN"
+      ],
+      "indexes": [
+        "shortCode_1"
+      ]
+    },
+    "documentsExaminedReductionPercent": 99.95,
+    "latencyPercentageClaim": "Not made: explain timing is coarse and affected by cache/network",
+    "additionalQueries": {
+      "recentActiveListing": {
+        "executionTimeMillis": 2,
+        "nReturned": 12,
+        "totalDocsExamined": 2000,
+        "totalKeysExamined": 0,
+        "stages": [
+          "SORT",
+          "COLLSCAN"
+        ],
+        "indexes": []
+      },
+      "statsOrDeletionIdLookup": {
+        "executionTimeMillis": 0,
+        "nReturned": 1,
+        "totalDocsExamined": 1,
+        "totalKeysExamined": 1,
+        "stages": [
+          "EXPRESS_IXSCAN"
+        ],
+        "indexes": [
+          "_id_"
+        ]
+      }
+    }
+  },
+  "redirect": {
+    "sampleSize": 100,
+    "warmupRequests": 10,
+    "concurrency": 2,
+    "successful": 100,
+    "failed": 0,
+    "elapsedMs": 14744.042399999998,
+    "requestsPerSecond": 6.782400462982935,
+    "averageLatencyMs": 292.9680949999998,
+    "p50LatencyMs": 229.60759999999937,
+    "p95LatencyMs": 523.8869999999988,
+    "p99LatencyMs": 784.2317999999977,
+    "persistedClicksIncludingWarmup": 110,
+    "limitations": "Single run; includes local host and Atlas network/write latency. p99 is low-confidence at n=100. Not production throughput or capacity."
+  }
+}

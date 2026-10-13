@@ -4,13 +4,15 @@ function recentDays(now = new Date()) {
 }
 
 function dailyCounts(url) {
-  if (url.dailyClicks) return url.dailyClicks;
   const counts = new Map();
   for (const click of url.clickHistory || []) {
     const date = new Date(click.timestamp).toISOString().slice(0, 10);
     counts.set(date, (counts.get(date) || 0) + 1);
   }
-  return [...counts].map(([date, clicks]) => ({ date, clicks }));
+  // Each daily bucket is an authoritative total (including legacy events).
+  // Override rather than add, and retain legacy fallback for missing buckets.
+  for (const day of url.dailyClicks || []) counts.set(day.date, day.clicks);
+  return [...counts].sort(([a], [b]) => a.localeCompare(b)).map(([date, clicks]) => ({ date, clicks }));
 }
 
 module.exports = { recentDays, dailyCounts };

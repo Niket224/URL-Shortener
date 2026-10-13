@@ -31,7 +31,7 @@ router.get("/:code", async (req, res) => {
 
     res.set("Cache-Control", "no-store").redirect(302, url.originalUrl);
   } catch (err) {
-    console.error("GET /:code redirect", err);
+    console.error("GET /:code redirect", "Request failed; database details withheld");
     res.status(500).json({ error: "Server error" });
   }
 });

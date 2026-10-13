@@ -26,7 +26,7 @@ A full-stack URL shortener with click analytics, custom short codes, and a sleek
 - ⚡ **Rate Limiting** — 100 requests per 15 minutes to prevent abuse
 - 🌐 **302 Redirects** — Uncached temporary redirects with click tracking
 - 🔒 **Durable Storage** — Links persist across server restarts (MongoDB)
-- ✅ **Production-Ready** — Bugfix ensures no 404s from non-durable storage or routing mismatches
+- ✅ **Deployment checks** ? Explicit configuration, isolated tests and local verification; hosted deployment still requires approval and validation.
 
 ---
 
@@ -193,7 +193,7 @@ Local memory mode also loses accounts and sessions on restart. MongoDB is mandat
 
 Creation accepts an optional future ISO timestamp in `expiresAt`; PATCH accepts a destination and/or expiration (null removes expiration). Expired links return 410; deleted links return 404. Custom codes remain reserved after deletion. Destinations allow HTTP/HTTPS only and cannot contain credentials.
 
-Redirects now use 302 with Cache-Control: no-store so destination edits, deletion, expiration, and repeat-visit analytics remain effective. Old 301 responses already cached in browsers cannot be recalled. HEAD requests do not count as clicks. Analytics retain the lifetime count plus seven UTC daily counters. Existing embedded click history is consolidated on the next visit, preserving recent counts and lifetime totals while discarding raw referrer/user-agent history. Analytics are best-effort: a failed write permits the redirect and may undercount.
+Redirects now use 302 with Cache-Control: no-store so destination edits, deletion, expiration, and repeat-visit analytics remain effective. Old 301 responses already cached in browsers cannot be recalled. HEAD requests do not count as clicks. Analytics retain the lifetime count plus seven UTC daily counters. Existing raw click history is preserved unchanged. Daily buckets are authoritative totals including legacy events: stats use a bucket when present and raw-history fallback for missing days, never summing overlapping representations. New clicks atomically update seven daily totals and the lifetime count without appending raw events. Analytics are best-effort: a failed write permits the redirect and may undercount.
 
 ## Runtime configuration
 
@@ -201,7 +201,15 @@ On Render, set `NODE_ENV=production`, `MONGODB_URI`, `BASE_URL`, `FRONTEND_URL`,
 
 ## Verification
 
+Atlas is explicitly opt-in: from `backend`, run `npm run test:atlas`. Privately set both `MONGODB_URI` (normal database) and `TEST_MONGODB_URI` (explicit `snip_test`) in the backend environment. The runner rejects identical database names and never silently falls back to memory. Normal `npm test` does not use Atlas. Test cleanup is restricted to the current run's synthetic records. Interrupted runs may leave disposable test fixtures.
+
+For the isolated synthetic benchmark, run `node scripts/benchmark.js` from `backend`. See [measured evidence and limitations](docs/verification.md) and [raw results](docs/benchmark-results.json). No production-performance claims are made.
+
 - Backend: `cd backend && npm ci && npm test`. Tests use a disposable real MongoDB binary through mongodb-memory-server; the first run downloads it. Coverage includes a separate Node process reading persisted data, reconnects, concurrent click counts, account isolation, expiration, validation, and regression cases.
 - Frontend: set `VITE_API_URL` to your Render origin, then `cd frontend && npm ci && npm run build`.
 - Browser: `cd frontend && npx playwright install chromium && npm run test:e2e`. Tests launch isolated local servers on ports 5101/5179 with memory storage, and exercise desktop/mobile account and link workflows. Screenshots/results go to the OS temporary directory.
 - GitHub Actions runs backend tests, the production build, and Chromium smoke tests on pushes and pull requests. It does not deploy.
+
+## Final engineering evidence
+
+See [final architecture and readiness review](docs/final-review.md), [phase-by-phase verification](docs/verification.md), and [verified resume metrics and bullets](docs/verified-resume-metrics.md). Current synthetic benchmark data is in [benchmark-current-results.json](docs/benchmark-current-results.json); earlier runs remain labeled historical evidence. No production traffic or uptime is claimed.

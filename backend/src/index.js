@@ -2,7 +2,7 @@ if (process.env.NODE_ENV !== "test") require("dotenv").config();
 const express = require("express");
 const cors = require("cors");
 const rateLimit = require("express-rate-limit");
-const { initStore, getStoreMode, isStoreReady } = require("./store");
+const { initStore, getStoreMode, isStoreReady, closeStore } = require("./store");
 const { baseUrl, frontendUrl } = require("./config");
 
 // Validate public origins before accepting requests or connecting to MongoDB.
@@ -30,7 +30,7 @@ app.use("/api", (req, res, next) => { res.set("Cache-Control", "no-store"); next
 
 app.get("/api/health", (req, res) => {
   const ready = isStoreReady();
-  res.status(ready ? 200 : 503).json({ status: ready ? "ok" : "unavailable", store: getStoreMode() });
+  res.status(ready ? 200 : 503).json({ status: ready ? "ok" : "unavailable", application: "running", store: getStoreMode(), storageReady: ready });
 });
 
 // Rate limiting is skipped in the test environment so property-based tests
@@ -57,23 +57,37 @@ app.use((err, req, res, next) => {
 // Default 5001: macOS AirPlay uses port 5000 and returns 403 to API requests.
 const PORT = process.env.PORT || 5001;
 
-function start() {
-  return initStore()
-    .then(() => {
-      app.listen(PORT, () => {
-        console.log(`🚀 Server running on port ${PORT} (${getStoreMode()})`);
-      });
-    })
-    .catch((err) => {
-      console.error("❌ Failed to start:", err.message);
-      process.exit(1);
-    });
+async function start() {
+  await initStore();
+  return new Promise((resolve, reject) => {
+    const server = app.listen(PORT, () => resolve(server));
+    server.once("error", reject);
+  });
 }
 
 // Only start the server when this file is run directly (e.g. `node src/index.js`).
 // When required from tests, the test harness drives `app` and `initStore` itself.
 if (require.main === module) {
-  start();
+  start().then(server => {
+    console.log(`Server running (${getStoreMode()})`);
+    let stopping = false;
+    const shutdown = () => {
+      if (stopping) return;
+      stopping = true;
+      const deadline = setTimeout(() => process.exit(1), 10000);
+      deadline.unref();
+      server.close(async () => {
+        try { await closeStore(); clearTimeout(deadline); process.exitCode = 0; }
+        catch { process.exitCode = 1; }
+      });
+    };
+    process.once("SIGINT", shutdown);
+    process.once("SIGTERM", shutdown);
+  }).catch(async () => {
+    console.error("Startup failed; verify database connectivity and configuration privately.");
+    await closeStore().catch(() => {});
+    process.exitCode = 1;
+  });
 }
 
 module.exports = { app, start };

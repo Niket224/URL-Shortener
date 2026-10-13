@@ -54,3 +54,22 @@ test("generated-code collisions retry automatically", async () => {
   expect((await request(app).post("/api/urls").send({ originalUrl: "https://example.com" })).status).toBe(201);
   expect(spy).toHaveBeenCalledTimes(2);
 });
+test("generated-code collision retries stop after five attempts", async () => {
+  const spy = jest.spyOn(getStore(), "createUrl").mockImplementation(() => { throw Object.assign(new Error(), { code: 11000 }); });
+  expect((await request(app).post("/api/urls").send({ originalUrl: "https://example.com" })).status).toBe(503);
+  expect(spy).toHaveBeenCalledTimes(5);
+});
+test("large bodies and invalid custom-code types produce JSON client errors", async () => {
+  const large = await request(app).post("/api/urls").send({ originalUrl: "https://example.com/" + "a".repeat(20000) });
+  expect(large.status).toBe(413); expect(large.body.error).toBe("Request body too large");
+  expect((await request(app).post("/api/urls").send({ originalUrl: "https://example.com", customCode: {} })).status).toBe(400);
+  expect((await request(app).post("/api/urls").send({ originalUrl: " " })).status).toBe(400);
+});
+test("database error details are absent from API responses and logs", async () => {
+  const log = jest.spyOn(console, "error").mockImplementation(() => {});
+  jest.spyOn(getStore(), "listActive").mockRejectedValue(new Error("sensitive-driver-detail"));
+  const response = await request(app).get("/api/urls");
+  expect(response.status).toBe(500);
+  expect(response.body).toEqual({ error: "Server error" });
+  expect(JSON.stringify(log.mock.calls)).not.toContain("sensitive-driver-detail");
+});

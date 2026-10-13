@@ -76,7 +76,7 @@ router.post("/", async (req, res) => {
     if (err.name === "ValidationError") {
       return res.status(400).json({ error: CODE_CONSTRAINT_MESSAGE });
     }
-    console.error("POST /api/urls", err);
+    console.error("POST /api/urls", "Request failed; database details withheld");
     res.status(500).json({ error: "Server error" });
   }
 });
@@ -106,7 +106,7 @@ router.get("/", async (req, res) => {
       }))
     );
   } catch (err) {
-    console.error("GET /api/urls", err);
+    console.error("GET /api/urls", "Request failed; database details withheld");
     res.status(500).json({ error: "Server error" });
   }
 });
@@ -137,7 +137,7 @@ router.get("/:id/stats", async (req, res) => {
       expiresAt: url.expiresAt,
     });
   } catch (err) {
-    console.error("GET /api/urls/:id/stats", err);
+    console.error("GET /api/urls/:id/stats", "Request failed; database details withheld");
     res.status(500).json({ error: "Server error" });
   }
 });
@@ -150,7 +150,7 @@ router.delete("/:id", async (req, res) => {
     if (!url) return res.status(404).json({ error: "URL not found" });
     res.json({ message: "URL deleted successfully" });
   } catch (err) {
-    console.error("DELETE /api/urls/:id", err);
+    console.error("DELETE /api/urls/:id", "Request failed; database details withheld");
     res.status(500).json({ error: "Server error" });
   }
 });

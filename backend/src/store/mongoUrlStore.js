@@ -50,20 +50,25 @@ async function softDelete(id, ownerId) {
 async function recordClick(id) {
   const { recentDays } = require("../utils/analytics");
   const days = recentDays();
-  // Atomic daily counters; migrate legacy history once, then retain seven UTC days.
-  const legacy = days.map(date => ({ date, clicks: { $size: { $filter: {
+  // Non-destructive, atomic daily totals. Raw legacy events are never rewritten.
+  const legacyCount = date => ({ $size: { $filter: {
     input: { $ifNull: ["$clickHistory", []] }, as: "click",
     cond: { $eq: [{ $dateToString: { format: "%Y-%m-%d", date: "$$click.timestamp", timezone: "UTC" } }, date] },
-  } } } }));
+  } } });
   await Url.findByIdAndUpdate(id, [
-    { $set: { dailyClicks: { $ifNull: ["$dailyClicks", legacy] } } },
     { $set: {
       clicks: { $add: ["$clicks", 1] },
       dailyClicks: days.map(date => ({ date, clicks: { $add: [
-        { $sum: { $map: { input: { $filter: { input: "$dailyClicks", as: "day", cond: { $eq: ["$$day.date", date] } } }, as: "day", in: "$$day.clicks" } } },
+        { $let: {
+          vars: { buckets: { $filter: { input: { $ifNull: ["$dailyClicks", []] }, as: "day", cond: { $eq: ["$$day.date", date] } } } },
+          in: { $cond: [
+            { $gt: [{ $size: "$$buckets" }, 0] },
+            { $sum: { $map: { input: "$$buckets", as: "day", in: "$$day.clicks" } } },
+            legacyCount(date),
+          ] },
+        } },
         date === days[6] ? 1 : 0,
       ] } })),
-      clickHistory: [],
     } },
   ]);
 }

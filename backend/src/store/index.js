@@ -1,6 +1,6 @@
 const mongoose = require("mongoose");
 
-let mode = "memory";
+let mode = process.env.MONGODB_URI ? "mongo" : "memory";
 let store = null;
 
 function getStore() {
@@ -22,7 +22,18 @@ function requiresDurableStore() {
 }
 
 async function initStore() {
+  store = null;
   if (process.env.MONGODB_URI) {
+    if (process.env.NODE_ENV === "test") {
+      const { MongoClient } = require("mongodb");
+      let name;
+      try { name = new MongoClient(process.env.MONGODB_URI).db().databaseName; }
+      catch { throw new Error("Invalid isolated test database configuration"); }
+      if (!["snip_test", "snip_isolated_test"].includes(name)) {
+        throw new Error("Test mode refuses any database other than snip_test or snip_isolated_test");
+      }
+    }
+    mode = "mongo";
     await mongoose.connect(process.env.MONGODB_URI, { serverSelectionTimeoutMS: 5000 });
     await require("../models/Url").init();
     const { User, Session } = require("../auth");
@@ -53,4 +64,9 @@ function isStoreReady() {
   return Boolean(store) && (mode === "memory" || mongoose.connection.readyState === 1);
 }
 
-module.exports = { initStore, getStore, getStoreMode, isStoreReady };
+async function closeStore() {
+  store = null;
+  await mongoose.disconnect();
+}
+
+module.exports = { initStore, getStore, getStoreMode, isStoreReady, closeStore };
